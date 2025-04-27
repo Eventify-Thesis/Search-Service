@@ -1,4 +1,12 @@
 services:
+  api-gateway:
+    build: ../api-gateway # Path to your API Gateway Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - ../api-gateway/.env  # Adjust path as needed
+    depends_on:
+      - qdrant-service
   qdrant-service:
     build: .
     ports:
