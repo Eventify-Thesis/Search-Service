@@ -3,7 +3,9 @@ import os
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient, models
+from datetime import datetime, timezone, timedelta
 
+LOCAL_TIMEZONE = timezone(timedelta(hours=7))  # UTC+7 (Vietnam, Thailand, etc.)
 load_dotenv()
 
 class HybridSearcher:
@@ -30,8 +32,9 @@ class HybridSearcher:
             return result[0][0].payload
         return None
 
-    def search(self, text: str, city: str = None, limit: int = 15, user_id: str = None, extra_filter=None, start_date: str = None, end_date: str = None):
-        query_filter_final = self._build_query_filter(city, extra_filter, start_date, end_date)
+    def search(self, text: str, city: str = None, limit: int = 15, user_id: str = None, extra_filter=None, startDate: str = None, endDate: str = None):
+        query_filter_final = self._build_query_filter(city, extra_filter, startDate, endDate)
+
         search_result = self.qdrant_client.query(
             collection_name=self.collection_name,
             query_text=text,
@@ -39,10 +42,11 @@ class HybridSearcher:
             limit=limit
         )
         
-        results = [
-            {k: v for k, v in hit.payload.items() if k != "document"}
-            for hit in search_result
-        ]
+        results = []
+        for hit in search_result:
+            filtered = {k: v for k, v in hit.metadata.items() if k != "document"}
+            results.append(filtered)
+            
         if user_id:
             bookmarked_ids = self._fetch_bookmarked_ids(user_id)
             self._annotate_with_bookmarks(results, bookmarked_ids)
@@ -50,32 +54,45 @@ class HybridSearcher:
             self._annotate_with_bookmarks(results, set())
         return results
 
-    def _build_query_filter(self, city, extra_filter, start_date, end_date):
+    
+    def _build_query_filter(self, city, extra_filter, startDate, endDate):
         query_filter = None
         if city:
             city = city.lower()
             query_filter = models.Filter(
                 must=[models.FieldCondition(key="city", match=models.MatchValue(value=city))]
             )
-        # Lowercase category values in extra_filter if present
+
         if extra_filter and hasattr(extra_filter, 'must'):
             for cond in extra_filter.must:
                 if hasattr(cond, 'key') and cond.key == "categories":
                     if hasattr(cond.match, 'values'):
                         cond.match.values = [v.lower() for v in cond.match.values]
-        # Add date range filter if start_date or end_date is provided
+
         date_filter = None
-        if start_date or end_date:
+        if startDate or endDate:
             date_range = {}
-            if start_date:
-                date_range['gte'] = start_date
-            if end_date:
-                date_range['lte'] = end_date
+
+            def parse_date_to_timestamp(date_str):
+                if not date_str:
+                    return None
+                try:
+                    dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
+                except ValueError:
+                    dt = datetime.strptime(date_str, "%Y-%m-%d")
+                dt = dt.replace(tzinfo=LOCAL_TIMEZONE)  # ✅ Assume input date is in UTC+7 timezone
+                return dt.astimezone(timezone.utc).timestamp()  # ✅ Convert to UTC timestamp
+
+            if startDate:
+                date_range['gte'] = parse_date_to_timestamp(startDate)
+            if endDate:
+                date_range['lte'] = parse_date_to_timestamp(endDate)
+
             date_filter = models.FieldCondition(
                 key="soonest_start_time",
-                match=models.Range(**date_range)
+                range=models.Range(**date_range)  # ✅ now gte/lte are floats, not strings
             )
-        # Merge all filters
+
         combined_must = []
         if query_filter and hasattr(query_filter, 'must'):
             combined_must += query_filter.must
@@ -83,6 +100,7 @@ class HybridSearcher:
             combined_must += extra_filter.must
         if date_filter:
             combined_must.append(date_filter)
+
         return models.Filter(must=combined_must) if combined_must else None
 
     def _fetch_bookmarked_ids(self, user_id):

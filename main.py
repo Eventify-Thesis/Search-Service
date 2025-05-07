@@ -3,18 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.getRelatedEvents import router as get_related_events_router
 from api.search.semanticSearch import router as search_router
 from api.search.searchMetadata import router as search_metadata_router
+from api.search.events_this_month import router as events_this_month_router
+from api.search.events_this_week import router as events_this_week_router
+from api.search.events_by_categories import router as events_by_categories_router
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Or restrict to your gateway's host
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 origins = [
+    "http://localhost",
+    "http://localhost:3000",
     "http://localhost:5173",
 ]
 
@@ -30,6 +27,9 @@ app.add_middleware(
 app.include_router(search_router, prefix="/api/search")
 app.include_router(get_related_events_router, prefix="/api/search")
 app.include_router(search_metadata_router, prefix="/api/search")
+app.include_router(events_this_month_router, prefix="/api/search")
+app.include_router(events_this_week_router, prefix="/api/search")
+app.include_router(events_by_categories_router, prefix="/api/search")
 
 if __name__ == "__main__":
     import uvicorn

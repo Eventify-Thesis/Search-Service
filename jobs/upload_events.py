@@ -138,7 +138,6 @@ if deleted_ids:
         collection_name=collection_name,
         points_selector=PointIdsList(points=deleted_ids)
     )
-    print(f"Deleted {len(deleted_ids)} events from Qdrant (no longer in DB).")
 
 # Prepare data for upserting
 documents = []
@@ -173,10 +172,6 @@ for row in rows:
     start_times = showtime_data.get(event_id, [])
     soonest_time = min(start_times) if start_times else None
     soonest_time_str = soonest_time.strftime("%Y-%m-%d %H:%M:%S") if soonest_time else None
-    
-    i+=1  
-    print(i, start_times, soonest_time_str)
-    print(i, lowest_price)
 
     documents.append(text)
     metadata.append({
@@ -202,7 +197,6 @@ if documents:
         metadata=metadata,
         ids=tqdm(ids),
     )
-    print(f"Upserted {len(documents)} events into Qdrant.")
 
 # # Save sync time
 # save_sync_time_qdrant()
