@@ -33,4 +33,4 @@ app.include_router(events_by_categories_router, prefix="/api/search")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="localhost", port=8000, reload=True)
+    uvicorn.run("main:app", host="localhost", port=8003, reload=True)
