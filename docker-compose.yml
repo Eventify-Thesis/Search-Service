@@ -8,7 +8,7 @@ services:
     depends_on:
       - qdrant
     networks:
-      - event-service_default
+      - event-service_app-network
     volumes:
       - .:/app
 
@@ -19,8 +19,8 @@ services:
     volumes:
       - ./qdrant_storage:/qdrant/storage
     networks:
-      - event-service_default
+      - event-service_app-network
 
 networks:
-  event-service_default:
+  event-service_app-network:
     external: true
