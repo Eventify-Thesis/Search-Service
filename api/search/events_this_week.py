@@ -22,6 +22,7 @@ def get_events_this_week():
         text="",
         city="",
         limit=15,
+        offset=0,
         user_id=None,
         extra_filter=None,
         startDate=start_of_week.strftime("%Y-%m-%d"),

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException
-from app.hybrid_searcher import HybridSearcher, models
+from app.hybrid_searcher import HybridSearcher
 
 router = APIRouter()
 hybrid_searcher = HybridSearcher(collection_name="events")
@@ -31,6 +31,7 @@ def get_related_events(event_id: int, limit: int = Query(default=4, ge=1, le=50)
     results = hybrid_searcher.search(
         text=query,
         limit=limit+1,  # fetch one extra in case the event itself is returned
+        offset=0,
         extra_filter=None
     )
     

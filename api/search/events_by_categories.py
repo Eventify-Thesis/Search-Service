@@ -48,6 +48,7 @@ def get_events_by_category():
                 text="",
                 city="",
                 limit=5,
+                offset=0,
                 user_id=None,
                 extra_filter=extra_filter,
                 startDate=None,

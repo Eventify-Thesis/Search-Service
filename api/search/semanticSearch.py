@@ -11,6 +11,7 @@ hybrid_searcher = HybridSearcher(collection_name="events")
 def search_events(
     q: Optional[str] = Query(default=None, description="Search query (optional, leave empty to search by category or city only)"),
     limit: int = Query(default=15, ge=1, le=100),
+    page: int = Query(default=1, ge=1),  # Page number (defaults to 1)
     city: Optional[str] = Query(default=None),
     categories: Optional[list[str]] = Query(default=None),
     startDate: Optional[str] = Query(default=None, alias="start_date"),
@@ -19,8 +20,7 @@ def search_events(
 ):
     """
     Search for events using semantic text, category, city, and date filters.
-    - If 'q' is None or empty, all events matching the other filters will be returned.
-    - Users can search by category only, city only, or any combination.
+    Pagination is handled by `page` and `limit` parameters.
     """
     user_id = user["sub"] if user else None
     # Lowercase city and categories for case-insensitive search
@@ -35,20 +35,28 @@ def search_events(
         
         categories_lower = [cat.lower() for cat in categories]
         extra_filter = models.Filter(
-            must=[models.FieldCondition(key="categories", match=models.MatchAny(any=categories_lower))]
+            must=[models.FieldCondition(key="categories", match=models.MatchAny(any=categories_lower))]  # Filter by categories
         )
 
     # Get results from searcher
-    # If q is None, pass an empty string to search all events (with filters)
     search_text = q if q is not None else ""
+    
+    # Calculate offset based on page and limit (offset = (page - 1) * limit)
+    offset = (page - 1) * limit
+    
     results = hybrid_searcher.search(
         text=search_text,
         city=city_lower,
         limit=limit,
+        offset=offset,  # Pass the offset to the search function
         user_id=user_id,
         extra_filter=extra_filter,
         startDate=startDate,
         endDate=endDate
     )
 
-    return {"result": results}
+    return {
+        "result": results,
+        "page": page,  # Return current page
+        "limit": limit,  # Return limit
+    }

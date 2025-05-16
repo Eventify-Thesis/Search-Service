@@ -22,6 +22,7 @@ def get_events_this_month():
         text="",
         city="",
         limit=15,
+        offset=0,
         user_id=None,
         extra_filter=None,
         startDate=start_of_month.strftime("%Y-%m-%d"),

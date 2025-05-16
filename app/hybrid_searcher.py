@@ -32,16 +32,17 @@ class HybridSearcher:
             return result[0][0].payload
         return None
 
-    def search(self, text: str, city: str = None, limit: int = 15, user_id: str = None, extra_filter=None, startDate: str = None, endDate: str = None):
+    def search(self, text: str, city: str = None, limit: int = 15, offset: int = 0, user_id: str = None, extra_filter=None, startDate: str = None, endDate: str = None):
         query_filter_final = self._build_query_filter(city, extra_filter, startDate, endDate)
 
         search_result = self.qdrant_client.query(
             collection_name=self.collection_name,
             query_text=text,
             query_filter=query_filter_final,
-            limit=limit
+            limit=limit,
+            offset=offset  # Use offset to handle pagination
         )
-        
+
         results = []
         for hit in search_result:
             filtered = {k: v for k, v in hit.metadata.items() if k != "document"}
