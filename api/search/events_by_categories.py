@@ -3,65 +3,105 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import logging
-from app.hybrid_searcher import HybridSearcher, models
+from app.hybrid_searcher import HybridSearcher, models, DatabasePool
+from typing import Dict, List
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import redis
+import json
+from datetime import timedelta
 
 router = APIRouter()
 
+# Initialize Redis client
+redis_client = redis.Redis(
+    host=os.getenv('REDIS_HOST', 'redis'),  # Use environment variable or default to 'redis'
+    port=int(os.getenv('REDIS_PORT', 6379)),
+    decode_responses=True,  # This will automatically decode responses to strings
+    socket_connect_timeout=5,  # Add timeout
+    retry_on_timeout=True  # Retry on timeout
+)
 
-def get_db_connection():
-    return psycopg2.connect(
-        host=os.getenv("DATABASE_HOST"),
-        port=os.getenv("DATABASE_PORT"),
-        user=os.getenv("DATABASE_USERNAME"),
-        password=os.getenv("DATABASE_PASSWORD"),
-        dbname=os.getenv("DATABASE_NAME")
+CACHE_KEY = "events_by_category"
+CACHE_DURATION = timedelta(minutes=10)
+
+def fetch_category_events(searcher: HybridSearcher, category_code: str, category_name_en: str, category_name_vi: str) -> tuple:
+    """Fetch events for a single category"""
+    extra_filter = models.Filter(
+        must=[models.FieldCondition(key="categories", match=models.MatchAny(any=[category_code]))]
+    ) if category_code else None
+
+    events = searcher.search(
+        text="",
+        city="",
+        limit=5,
+        offset=0,
+        user_id=None,
+        extra_filter=extra_filter,
+        startDate=None,
+        endDate=None
     )
-
+    
+    return category_code, {
+        "title": {
+            "en": category_name_en,
+            "vi": category_name_vi
+        },
+        "events": events
+    }
 
 @router.get("/events-by-category")
-def get_events_by_category():
-    conn = get_db_connection()
+async def get_events_by_category():
+    # Try to get from cache first
+    cached_data = redis_client.get(CACHE_KEY)
+    if cached_data:
+        try:
+            return json.loads(cached_data)
+        except json.JSONDecodeError:
+            logging.warning("Failed to decode cached data, fetching fresh data")
+
+    conn = None
     try:
+        db_pool = DatabasePool.get_instance()
+        conn = db_pool.get_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        # Fetch all categories
+        
+        # Fetch all categories in a single query
         cursor.execute("SELECT code, name_en, name_vi FROM categories")
         categories = cursor.fetchall()
 
         # Initialize HybridSearcher
         searcher = HybridSearcher(collection_name="events")
 
-        # Organize events by category
-        categorized_events = {}
-        for category in categories:
-            category_code = category["code"].lower()
-            category_name_en = category["name_en"]
-            category_name_vi = category["name_vi"]
-
-            if category_code:
-                extra_filter = models.Filter(
-                    must=[models.FieldCondition(key="categories", match=models.MatchAny(any=[category_code]))]
+        # Use ThreadPoolExecutor to fetch events for all categories concurrently
+        with ThreadPoolExecutor(max_workers=min(10, len(categories))) as executor:
+            # Create tasks for each category
+            futures = [
+                executor.submit(
+                    fetch_category_events,
+                    searcher,
+                    category["code"].lower(),
+                    category["name_en"],
+                    category["name_vi"]
                 )
-            else:
-                extra_filter = None
-
-            events = searcher.search(
-                text="",
-                city="",
-                limit=5,
-                offset=0,
-                user_id=None,
-                extra_filter=extra_filter,
-                startDate=None,
-                endDate=None
-            )
+                for category in categories
+            ]
             
-            categorized_events[category_code] = {
-                "title": {
-                    "en": category_name_en,
-                    "vi": category_name_vi
-                },
-                "events": events
-            }
+            # Collect results as they complete
+            categorized_events = {}
+            for future in futures:
+                category_code, result = future.result()
+                categorized_events[category_code] = result
+
+        # Cache the results
+        try:
+            redis_client.setex(
+                CACHE_KEY,
+                CACHE_DURATION,
+                json.dumps(categorized_events)
+            )
+        except redis.RedisError as e:
+            logging.error(f"Failed to cache data: {e}")
 
         return categorized_events
 
@@ -69,5 +109,7 @@ def get_events_by_category():
         logging.error("Error fetching events by category: %s", e)
         raise HTTPException(status_code=500, detail="Internal Server Error")
     finally:
-        cursor.close()
-        conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            db_pool.release_connection(conn)

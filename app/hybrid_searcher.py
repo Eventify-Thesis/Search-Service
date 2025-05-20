@@ -1,12 +1,41 @@
 import psycopg2
 import os
 from psycopg2.extras import RealDictCursor
+from psycopg2 import pool
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient, models
 from datetime import datetime, timezone, timedelta
 
 LOCAL_TIMEZONE = timezone(timedelta(hours=7))  # UTC+7 (Vietnam, Thailand, etc.)
 load_dotenv()
+
+class DatabasePool:
+    _instance = None
+    _pool = None
+
+    @classmethod
+    def get_instance(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self):
+        if DatabasePool._pool is None:
+            DatabasePool._pool = pool.ThreadedConnectionPool(
+                minconn=1,
+                maxconn=20,
+                host=os.getenv("DATABASE_HOST"),
+                port=os.getenv("DATABASE_PORT"),
+                user=os.getenv("DATABASE_USERNAME"),
+                password=os.getenv("DATABASE_PASSWORD"),
+                dbname=os.getenv("DATABASE_NAME")
+            )
+
+    def get_connection(self):
+        return self._pool.getconn()
+
+    def release_connection(self, conn):
+        self._pool.putconn(conn)
 
 class HybridSearcher:
     DENSE_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -17,6 +46,7 @@ class HybridSearcher:
         self.qdrant_client = QdrantClient(os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"))
         self.qdrant_client.set_model(self.DENSE_MODEL)
         self.qdrant_client.set_sparse_model(self.SPARSE_MODEL)
+        self.db_pool = DatabasePool.get_instance()
 
     def get_event_by_id(self, event_id: str):
         """Fetch a single event by its id from Qdrant."""
@@ -105,20 +135,18 @@ class HybridSearcher:
         return models.Filter(must=combined_must) if combined_must else None
 
     def _fetch_bookmarked_ids(self, user_id):
-        conn = psycopg2.connect(
-            host=os.getenv("DATABASE_HOST"),
-            port=os.getenv("DATABASE_PORT"),
-            user=os.getenv("DATABASE_USERNAME"),
-            password=os.getenv("DATABASE_PASSWORD"),
-            dbname=os.getenv("DATABASE_NAME")
-        )
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("""
-            SELECT event_id FROM interests WHERE user_id = %s
-        """, (user_id,))
-        bookmarked_ids = {row["event_id"] for row in cursor.fetchall()}
-        conn.close()
-        return bookmarked_ids
+        conn = None
+        try:
+            conn = self.db_pool.get_connection()
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("""
+                SELECT event_id FROM interests WHERE user_id = %s
+            """, (user_id,))
+            bookmarked_ids = {row["event_id"] for row in cursor.fetchall()}
+            return bookmarked_ids
+        finally:
+            if conn:
+                self.db_pool.release_connection(conn)
 
     def _annotate_with_bookmarks(self, results, bookmarked_ids):
         for item in results:
