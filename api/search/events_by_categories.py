@@ -10,6 +10,8 @@ from concurrent.futures import ThreadPoolExecutor
 import redis
 import json
 from datetime import timedelta
+from typing import Optional
+from fastapi import Query
 
 router = APIRouter()
 
@@ -25,7 +27,7 @@ redis_client = redis.Redis(
 CACHE_KEY = "events_by_category"
 CACHE_DURATION = timedelta(minutes=10)
 
-def fetch_category_events(searcher: HybridSearcher, category_code: str, category_name_en: str, category_name_vi: str) -> tuple:
+def fetch_category_events(searcher: HybridSearcher, category_code: str, category_name_en: str, category_name_vi: str, userId: Optional[str] = Query(default=None)) -> tuple:
     """Fetch events for a single category"""
     extra_filter = models.Filter(
         must=[models.FieldCondition(key="categories", match=models.MatchAny(any=[category_code]))]
@@ -36,7 +38,7 @@ def fetch_category_events(searcher: HybridSearcher, category_code: str, category
         city="",
         limit=5,
         offset=0,
-        user_id=None,
+        user_id=userId,
         extra_filter=extra_filter,
         startDate=None,
         endDate=None
@@ -51,7 +53,7 @@ def fetch_category_events(searcher: HybridSearcher, category_code: str, category
     }
 
 @router.get("/events-by-category")
-async def get_events_by_category():
+async def get_events_by_category(userId: Optional[str] = Query(default=None)):
     # Try to get from cache first
     cached_data = redis_client.get(CACHE_KEY)
     if cached_data:
@@ -82,7 +84,8 @@ async def get_events_by_category():
                     searcher,
                     category["code"].lower(),
                     category["name_en"],
-                    category["name_vi"]
+                    category["name_vi"],
+                    userId
                 )
                 for category in categories
             ]

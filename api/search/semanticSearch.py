@@ -14,6 +14,7 @@ def search_events(
     page: int = Query(default=1, ge=1),  # Page number (defaults to 1)
     city: Optional[str] = Query(default=None),
     categories: Optional[list[str]] = Query(default=None),
+    userId: Optional[str] = Query(default=None),
     startDate: Optional[str] = Query(default=None, alias="start_date"),
     endDate: Optional[str] = Query(default=None, alias="end_date"),
     user: Optional[dict] = Depends(optional_verify_token),
@@ -49,7 +50,7 @@ def search_events(
         city=city_lower,
         limit=limit,
         offset=offset,  # Pass the offset to the search function
-        user_id=user_id,
+        user_id=userId,
         extra_filter=extra_filter,
         startDate=startDate,
         endDate=endDate
