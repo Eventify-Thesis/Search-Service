@@ -120,7 +120,7 @@ class HybridSearcher:
                 date_range['lte'] = parse_date_to_timestamp(endDate)
 
             date_filter = models.FieldCondition(
-                key="soonest_start_time",
+                key="startTime",
                 range=models.Range(**date_range)  # ✅ now gte/lte are floats, not strings
             )
 
@@ -150,4 +150,4 @@ class HybridSearcher:
 
     def _annotate_with_bookmarks(self, results, bookmarked_ids):
         for item in results:
-            item["bookmarked"] = item["id"] in bookmarked_ids
+            item["isInterested"] = item["id"] in bookmarked_ids
