@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 
 LOCAL_TIMEZONE = timezone(timedelta(hours=7))  # UTC+7 (Vietnam, Thailand, etc.)
 load_dotenv()
+score_threshold = 0.25
 
 class DatabasePool:
     _instance = None
@@ -38,14 +39,12 @@ class DatabasePool:
         self._pool.putconn(conn)
 
 class HybridSearcher:
-    DENSE_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-    SPARSE_MODEL = "prithivida/Splade_PP_en_v1"
+    DENSE_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
     def __init__(self, collection_name):
         self.collection_name = collection_name
         self.qdrant_client = QdrantClient(os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"))
         self.qdrant_client.set_model(self.DENSE_MODEL)
-        self.qdrant_client.set_sparse_model(self.SPARSE_MODEL)
         self.db_pool = DatabasePool.get_instance()
 
     def get_event_by_id(self, event_id: str):
@@ -75,6 +74,8 @@ class HybridSearcher:
 
         results = []
         for hit in search_result:
+            if hasattr(hit, "score") and hit.score < score_threshold:
+                continue
             filtered = {k: v for k, v in hit.metadata.items() if k != "document"}
             results.append(filtered)
             

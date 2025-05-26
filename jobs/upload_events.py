@@ -19,8 +19,7 @@ client = QdrantClient(
     url=os.getenv("QDRANT_URL"),
     api_key=os.getenv("QDRANT_API_KEY")
 )
-client.set_model("sentence-transformers/all-MiniLM-L6-v2")
-client.set_sparse_model("prithivida/Splade_PP_en_v1")
+client.set_model("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 collection_name = "events"
 
 # def load_last_sync_time_qdrant():
