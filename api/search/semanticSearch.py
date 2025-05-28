@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 router = APIRouter()
 hybrid_searcher = HybridSearcher(collection_name="events")
+score_thresholds = 0.3
 
 @router.get("")
 def search_events(
@@ -17,12 +18,18 @@ def search_events(
     userId: Optional[str] = Query(default=None),
     startDate: Optional[str] = Query(default=None, alias="start_date"),
     endDate: Optional[str] = Query(default=None, alias="end_date"),
+    min_lat: Optional[float] = Query(default=None, description="Minimum latitude for bounding box filter"),
+    max_lat: Optional[float] = Query(default=None, description="Maximum latitude for bounding box filter"),
+    min_lon: Optional[float] = Query(default=None, description="Minimum longitude for bounding box filter"),
+    max_lon: Optional[float] = Query(default=None, description="Maximum longitude for bounding box filter"),
     user: Optional[dict] = Depends(optional_verify_token),
 ):
     """
     Search for events using semantic text, category, city, and date filters.
     Pagination is handled by `page` and `limit` parameters.
     """
+    print(f"Received search parameters: min_lat={min_lat}, max_lat={max_lat}, min_lon={min_lon}, max_lon={max_lon}")
+    
     user_id = user["sub"] if user else None
     # Lowercase city and categories for case-insensitive search
     city_lower = city.lower() if city else None
@@ -53,7 +60,12 @@ def search_events(
         user_id=userId,
         extra_filter=extra_filter,
         startDate=startDate,
-        endDate=endDate
+        endDate=endDate,
+        min_lat=min_lat,
+        max_lat=max_lat,
+        min_lon=min_lon,
+        max_lon=max_lon,
+        score_thresholds=score_thresholds
     )
 
     return {

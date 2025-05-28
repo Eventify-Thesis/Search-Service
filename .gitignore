@@ -18,3 +18,4 @@ Thumbs.db
 
 # Qdrant storage (if not needed in repo)
 qdrant_storage/
+config/gcloud/

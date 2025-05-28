@@ -8,7 +8,6 @@ from datetime import datetime, timezone, timedelta
 
 LOCAL_TIMEZONE = timezone(timedelta(hours=7))  # UTC+7 (Vietnam, Thailand, etc.)
 load_dotenv()
-score_threshold = 0.25
 
 class DatabasePool:
     _instance = None
@@ -61,33 +60,49 @@ class HybridSearcher:
             return result[0][0].payload
         return None
 
-    def search(self, text: str, city: str = None, limit: int = 15, offset: int = 0, user_id: str = None, extra_filter=None, startDate: str = None, endDate: str = None):
-        query_filter_final = self._build_query_filter(city, extra_filter, startDate, endDate)
+    def search(self, text: str, city: str = None, limit: int = 15, offset: int = 0, user_id: str = None, extra_filter=None, startDate: str = None, endDate: str = None, min_lat: float = None, max_lat: float = None, min_lon: float = None, max_lon: float = None, score_thresholds: float = None):
+        """
+        Search for events with optional user interest annotation.
+        If user_id is provided, the results will include isInterested field.
+        """
+        # Get base search results
+        results = self._search_base(text, city, limit, offset, extra_filter, startDate, endDate, min_lat, max_lat, min_lon, max_lon, score_thresholds)
+        
+        # Add interest data if user_id is provided
+        if user_id:
+            bookmarked_ids = self._fetch_bookmarked_ids(user_id)
+            self._annotate_with_bookmarks(results, bookmarked_ids)
+        else:
+            self._annotate_with_bookmarks(results, set())
+            
+        return results
+
+    def _search_base(self, text: str, city: str = None, limit: int = 15, offset: int = 0, extra_filter=None, startDate: str = None, endDate: str = None, min_lat: float = None, max_lat: float = None, min_lon: float = None, max_lon: float = None, score_thresholds: float = None):
+        """
+        Perform base search without user interest annotation.
+        This method is used internally and can be used for caching base results.
+        """
+        query_filter_final = self._build_query_filter(city, extra_filter, startDate, endDate, min_lat, max_lat, min_lon, max_lon)
 
         search_result = self.qdrant_client.query(
             collection_name=self.collection_name,
             query_text=text,
             query_filter=query_filter_final,
             limit=limit,
-            offset=offset  # Use offset to handle pagination
+            offset=offset
         )
 
         results = []
+        print(score_thresholds)
         for hit in search_result:
-            if hasattr(hit, "score") and hit.score < score_threshold:
+            if score_thresholds and text != "" and hit.score < score_thresholds:
                 continue
             filtered = {k: v for k, v in hit.metadata.items() if k != "document"}
             results.append(filtered)
             
-        if user_id:
-            bookmarked_ids = self._fetch_bookmarked_ids(user_id)
-            self._annotate_with_bookmarks(results, bookmarked_ids)
-        else:
-            self._annotate_with_bookmarks(results, set())
         return results
-
     
-    def _build_query_filter(self, city, extra_filter, startDate, endDate):
+    def _build_query_filter(self, city, extra_filter, startDate, endDate, min_lat, max_lat, min_lon, max_lon):
         query_filter = None
         if city:
             city = city.lower()
@@ -125,15 +140,36 @@ class HybridSearcher:
                 range=models.Range(**date_range)  # ✅ now gte/lte are floats, not strings
             )
 
-        combined_must = []
-        if query_filter and hasattr(query_filter, 'must'):
-            combined_must += query_filter.must
-        if extra_filter and hasattr(extra_filter, 'must'):
-            combined_must += extra_filter.must
-        if date_filter:
-            combined_must.append(date_filter)
+        # Bounding box geo filter - leverages Qdrant's native spatial index for efficient map-based querying
+        geo_filter = None
+        if all(coord is not None for coord in [min_lat, max_lat, min_lon, max_lon]):
+            print(f"Building geo filter with coordinates: min_lat={min_lat}, max_lat={max_lat}, min_lon={min_lon}, max_lon={max_lon}")
+            try:
+                geo_filter = models.FieldCondition(
+                    key="location",
+                    geo_bounding_box=models.GeoBoundingBox(
+                        top_left=models.GeoPoint(lat=max_lat, lon=min_lon),
+                        bottom_right=models.GeoPoint(lat=min_lat, lon=max_lon)
+                    )
+                )
+                print("Successfully created geo filter")
+            except Exception as e:
+                print(f"Error creating geo filter: {str(e)}")
+                raise
 
-        return models.Filter(must=combined_must) if combined_must else None
+        combined_filters = []
+        if query_filter and hasattr(query_filter, 'must'):
+            combined_filters += query_filter.must
+        if extra_filter and hasattr(extra_filter, 'must'):
+            combined_filters += extra_filter.must
+        if date_filter:
+            combined_filters.append(date_filter)
+        if geo_filter:
+            combined_filters.append(geo_filter)
+
+        final_filter = models.Filter(must=combined_filters) if combined_filters else None
+        print(f"Final filter: {final_filter}")
+        return final_filter
 
     def _fetch_bookmarked_ids(self, user_id):
         conn = None

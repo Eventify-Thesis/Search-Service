@@ -6,6 +6,8 @@ from api.search.searchMetadata import router as search_metadata_router
 from api.search.events_this_month import router as events_this_month_router
 from api.search.events_this_week import router as events_this_week_router
 from api.search.events_by_categories import router as events_by_categories_router
+from api.speech import router as speech_router
+from api.chat import router as chat_router
 
 app = FastAPI()
 
@@ -30,6 +32,8 @@ app.include_router(search_metadata_router, prefix="/api/search")
 app.include_router(events_this_month_router, prefix="/api/search")
 app.include_router(events_this_week_router, prefix="/api/search")
 app.include_router(events_by_categories_router, prefix="/api/search")
+app.include_router(speech_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
 
 if __name__ == "__main__":
     import uvicorn
