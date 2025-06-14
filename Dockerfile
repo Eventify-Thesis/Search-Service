@@ -1,5 +1,5 @@
-# Use an official Python base image
-FROM python:3.11-slim
+# Use an official Python base image with platform specification
+FROM --platform=linux/amd64 python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE 1
@@ -10,7 +10,7 @@ ENV GOOGLE_APPLICATION_CREDENTIALS=/app/config/gcloud/service-account.json
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y gcc libpq-dev
+RUN apt-get update && apt-get install -y gcc libpq-dev && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -22,8 +22,8 @@ COPY . .
 # Create config directory and ensure it exists
 RUN mkdir -p /app/config/gcloud
 
-# Expose FastAPI port
-EXPOSE 8003
+# Expose FastAPI port (Cloud Run will override this with PORT env var)
+EXPOSE 8080
 
-# Run the app
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8003"]
+# Run the app (use PORT env var if provided by Cloud Run, otherwise default to 8003)
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}

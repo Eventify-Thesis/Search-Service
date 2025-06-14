@@ -2,7 +2,7 @@ services:
   qdrant-service:
     build: .
     ports:
-      - "8003:8003"
+      - "8080:8080"
     env_file:
       - .env
     depends_on:
@@ -11,16 +11,6 @@ services:
       - event-service_app-network
     volumes:
       - .:/app
-
-  qdrant:
-    image: qdrant/qdrant
-    ports:
-      - "6333:6333"
-    volumes:
-      - ./qdrant_storage:/qdrant/storage
-    networks:
-      - event-service_app-network
-
 networks:
   event-service_app-network:
     external: true
