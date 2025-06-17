@@ -5,6 +5,10 @@ from psycopg2 import pool
 from dotenv import load_dotenv
 from qdrant_client import QdrantClient, models
 from datetime import datetime, timezone, timedelta
+import redis
+import json
+import hashlib
+import logging
 
 LOCAL_TIMEZONE = timezone(timedelta(hours=7))  # UTC+7 (Vietnam, Thailand, etc.)
 load_dotenv()
@@ -39,12 +43,28 @@ class DatabasePool:
 
 class HybridSearcher:
     DENSE_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    CACHE_DURATION = timedelta(minutes=5)  # Cache for 5 minutes
 
     def __init__(self, collection_name):
         self.collection_name = collection_name
         self.qdrant_client = QdrantClient(os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"))
         self.qdrant_client.set_model(self.DENSE_MODEL)
         self.db_pool = DatabasePool.get_instance()
+        
+        # Initialize Redis client
+        try:
+            self.redis_client = redis.Redis(
+                host=os.getenv('REDIS_HOST', 'redis'),
+                port=int(os.getenv('REDIS_PORT', 6379)),
+                decode_responses=True,
+                socket_connect_timeout=5,
+                retry_on_timeout=True
+            )
+            # Test Redis connection
+            self.redis_client.ping()
+        except Exception as e:
+            logging.warning(f"Redis connection failed: {e}. Caching will be disabled.")
+            self.redis_client = None
 
     def get_event_by_id(self, event_id: str):
         """Fetch a single event by its id from Qdrant."""
@@ -77,11 +97,56 @@ class HybridSearcher:
             
         return results
 
+    def _generate_cache_key(self, text: str, city: str = None, limit: int = 15, offset: int = 0, 
+                          extra_filter=None, startDate: str = None, endDate: str = None, 
+                          min_lat: float = None, max_lat: float = None, min_lon: float = None, 
+                          max_lon: float = None, score_thresholds: float = None):
+        """Generate a unique cache key based on search parameters"""
+        # Create a string representation of all search parameters
+        params = {
+            'text': text or '',
+            'city': city or '',
+            'limit': limit,
+            'offset': offset,
+            'startDate': startDate or '',
+            'endDate': endDate or '',
+            'min_lat': min_lat,
+            'max_lat': max_lat,
+            'min_lon': min_lon,
+            'max_lon': max_lon,
+            'score_thresholds': score_thresholds,
+            'collection': self.collection_name
+        }
+        
+        # Handle extra_filter
+        if extra_filter:
+            # Convert filter to a serializable format
+            filter_str = str(extra_filter)
+            params['extra_filter'] = filter_str
+        
+        # Create hash of parameters
+        params_str = json.dumps(params, sort_keys=True)
+        cache_key = f"search:{hashlib.md5(params_str.encode()).hexdigest()}"
+        return cache_key
+
     def _search_base(self, text: str, city: str = None, limit: int = 15, offset: int = 0, extra_filter=None, startDate: str = None, endDate: str = None, min_lat: float = None, max_lat: float = None, min_lon: float = None, max_lon: float = None, score_thresholds: float = None):
         """
         Perform base search without user interest annotation.
         This method is used internally and can be used for caching base results.
         """
+        # Try to get results from cache first
+        if self.redis_client:
+            try:
+                cache_key = self._generate_cache_key(text, city, limit, offset, extra_filter, 
+                                                   startDate, endDate, min_lat, max_lat, 
+                                                   min_lon, max_lon, score_thresholds)
+                cached_results = self.redis_client.get(cache_key)
+                if cached_results:
+                    return json.loads(cached_results)
+            except Exception as e:
+                logging.warning(f"Cache retrieval failed: {e}")
+
+        # If no cache hit, perform the actual search
         query_filter_final = self._build_query_filter(city, extra_filter, startDate, endDate, min_lat, max_lat, min_lon, max_lon)
 
         search_result = self.qdrant_client.query(
@@ -99,6 +164,20 @@ class HybridSearcher:
                 continue
             filtered = {k: v for k, v in hit.metadata.items() if k != "document"}
             results.append(filtered)
+        
+        # Cache the results
+        if self.redis_client:
+            try:
+                cache_key = self._generate_cache_key(text, city, limit, offset, extra_filter, 
+                                                   startDate, endDate, min_lat, max_lat, 
+                                                   min_lon, max_lon, score_thresholds)
+                self.redis_client.setex(
+                    cache_key,
+                    self.CACHE_DURATION,
+                    json.dumps(results)
+                )
+            except Exception as e:
+                logging.warning(f"Cache storage failed: {e}")
             
         return results
     
