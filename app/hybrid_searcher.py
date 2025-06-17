@@ -158,7 +158,6 @@ class HybridSearcher:
         )
 
         results = []
-        print(score_thresholds)
         for hit in search_result:
             if score_thresholds and text != "" and hit.score < score_thresholds:
                 continue

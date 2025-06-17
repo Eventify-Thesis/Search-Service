@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from datetime import datetime, timedelta
 from app.hybrid_searcher import HybridSearcher
+from app.cache_decorator import cache_endpoint
 import calendar
 import logging
 from typing import Optional
@@ -12,6 +13,7 @@ router = APIRouter()
 hybrid_searcher = HybridSearcher(collection_name="events")
 
 @router.get("/events/this-month")
+@cache_endpoint(duration_minutes=10, prefix="events_month")
 def get_events_this_month(userId: Optional[str] = Query(default=None)):
     today = datetime.now()
     start_of_month = today.replace(day=1)
