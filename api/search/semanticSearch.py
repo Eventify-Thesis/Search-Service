@@ -16,8 +16,8 @@ def search_events(
     city: Optional[str] = Query(default=None),
     categories: Optional[list[str]] = Query(default=None),
     userId: Optional[str] = Query(default=None),
-    startDate: Optional[str] = Query(default=None, alias="start_date"),
-    endDate: Optional[str] = Query(default=None, alias="end_date"),
+    startDate: Optional[str] = Query(default=None),
+    endDate: Optional[str] = Query(default=None),
     min_lat: Optional[float] = Query(default=None, description="Minimum latitude for bounding box filter"),
     max_lat: Optional[float] = Query(default=None, description="Maximum latitude for bounding box filter"),
     min_lon: Optional[float] = Query(default=None, description="Minimum longitude for bounding box filter"),
@@ -28,8 +28,6 @@ def search_events(
     Search for events using semantic text, category, city, and date filters.
     Pagination is handled by `page` and `limit` parameters.
     """
-    print(f"Received search parameters: min_lat={min_lat}, max_lat={max_lat}, min_lon={min_lon}, max_lon={max_lon}")
-    
     user_id = user["sub"] if user else None
     # Lowercase city and categories for case-insensitive search
     city_lower = city.lower() if city else None

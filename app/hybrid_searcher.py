@@ -198,30 +198,25 @@ class HybridSearcher:
         if startDate or endDate:
             date_range = {}
 
-            def parse_date_to_timestamp(date_str):
-                if not date_str:
-                    return None
-                try:
-                    dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
-                except ValueError:
-                    dt = datetime.strptime(date_str, "%Y-%m-%d")
-                dt = dt.replace(tzinfo=LOCAL_TIMEZONE)  # ✅ Assume input date is in UTC+7 timezone
-                return dt.astimezone(timezone.utc).timestamp()  # ✅ Convert to UTC timestamp
-
             if startDate:
-                date_range['gte'] = parse_date_to_timestamp(startDate)
+                start_timestamp = self._parse_date_to_timestamp(startDate)
+                if start_timestamp:
+                    date_range['gte'] = start_timestamp
             if endDate:
-                date_range['lte'] = parse_date_to_timestamp(endDate)
+                end_timestamp = self._parse_date_to_timestamp(endDate)
+                if end_timestamp:
+                    # Add 23:59:59 to include the entire end date
+                    date_range['lte'] = end_timestamp + (24 * 3600 - 1)
 
-            date_filter = models.FieldCondition(
-                key="startTime",
-                range=models.Range(**date_range)  # ✅ now gte/lte are floats, not strings
-            )
+            if date_range:
+                date_filter = models.FieldCondition(
+                    key="startTime",
+                    range=models.Range(**date_range)
+                )
 
         # Bounding box geo filter - leverages Qdrant's native spatial index for efficient map-based querying
         geo_filter = None
         if all(coord is not None for coord in [min_lat, max_lat, min_lon, max_lon]):
-            print(f"Building geo filter with coordinates: min_lat={min_lat}, max_lat={max_lat}, min_lon={min_lon}, max_lon={max_lon}")
             try:
                 geo_filter = models.FieldCondition(
                     key="location",
@@ -230,9 +225,7 @@ class HybridSearcher:
                         bottom_right=models.GeoPoint(lat=min_lat, lon=max_lon)
                     )
                 )
-                print("Successfully created geo filter")
             except Exception as e:
-                print(f"Error creating geo filter: {str(e)}")
                 raise
 
         combined_filters = []
@@ -246,8 +239,26 @@ class HybridSearcher:
             combined_filters.append(geo_filter)
 
         final_filter = models.Filter(must=combined_filters) if combined_filters else None
-        print(f"Final filter: {final_filter}")
         return final_filter
+
+    def _parse_date_to_timestamp(self, date_str):
+        """Parse date string to UTC timestamp"""
+        if not date_str:
+            return None
+        
+        try:
+            # Try with time first
+            dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            try:
+                # Try date only
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                return None
+        
+        # Set timezone and convert to UTC timestamp
+        dt = dt.replace(tzinfo=LOCAL_TIMEZONE)
+        return dt.astimezone(timezone.utc).timestamp()
 
     def _fetch_bookmarked_ids(self, user_id):
         conn = None
