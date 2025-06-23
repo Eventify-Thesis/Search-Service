@@ -20,7 +20,7 @@ def main():
         api_key=os.getenv("QDRANT_API_KEY")
     )
     client.set_model("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
-    collection_name = "events-v2"
+    collection_name = "events"
 
     def load_last_sync_time_qdrant():
         try:
