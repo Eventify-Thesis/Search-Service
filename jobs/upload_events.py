@@ -54,11 +54,11 @@ def main():
 
     # PostgreSQL connection
     conn = psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST"),
-        port=os.getenv("POSTGRES_PORT"),
-        user=os.getenv("POSTGRES_USER"),
-        password=os.getenv("POSTGRES_PASSWORD"),
-        dbname=os.getenv("POSTGRES_DB")
+        host=os.getenv("DATABASE_HOST"),
+        port=os.getenv("DATABASE_PORT"),
+        user=os.getenv("DATABASE_USERNAME"),
+        password=os.getenv("DATABASE_PASSWORD"),
+        dbname=os.getenv("DATABASE_NAME")
     )
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -83,6 +83,7 @@ def main():
             w.name AS ward_name,
             w.name_en AS ward_name_en
         FROM events e
+        WHERE e.status = 'PUBLISHED' or e.status = 'UPCOMING'
         LEFT JOIN cities c ON (e.city_id)::integer = c.origin_id
         LEFT JOIN districts d ON (e.district_id)::integer = d.origin_id
         LEFT JOIN wards w ON (e.ward_id)::integer = w.origin_id
