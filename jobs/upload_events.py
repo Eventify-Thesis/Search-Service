@@ -83,10 +83,10 @@ def main():
             w.name AS ward_name,
             w.name_en AS ward_name_en
         FROM events e
-        WHERE e.status = 'PUBLISHED' or e.status = 'UPCOMING'
         LEFT JOIN cities c ON (e.city_id)::integer = c.origin_id
         LEFT JOIN districts d ON (e.district_id)::integer = d.origin_id
         LEFT JOIN wards w ON (e.ward_id)::integer = w.origin_id
+        WHERE e.status = 'PUBLISHED' or e.status = 'UPCOMING'
     """)
 
     rows = cursor.fetchall()
